@@ -18,8 +18,10 @@
 //!
 
 use crate::ser::{self, Error, ProtocolVersion, Readable, Reader, Writeable, Writer};
+use bitcoin_hashes::sha256::{Hash as Sha256Hash, HashEngine, Midstate};
+use bitcoin_hashes::Hash as BitcoinHash;
 use byteorder::{BigEndian, ByteOrder};
-use libsm::sm3::hash::Sm3Hash;
+use std::io::Write;
 use std::{cmp::min, convert::AsRef, fmt, ops};
 
 /// A hash consisting of all zeroes, used as a sentinel. No known preimage.
@@ -152,15 +154,14 @@ impl Default for Hash {
 
 /// Serializer that outputs a hash of the serialized object
 pub struct HashWriter {
-    state: Vec<u8>,
+    state: HashEngine,
 }
 
 impl HashWriter {
     /// Consume the `HashWriter`, outputting its current hash into a 32-byte
     /// array
     pub fn finalize(self, output: &mut [u8]) {
-        let mut sm3hash = Sm3Hash::new(&self.state);
-        output.copy_from_slice(&sm3hash.get_hash());
+        output.copy_from_slice(Sha256Hash::from_engine(self.state).as_byte_array());
     }
 
     /// Consume the `HashWriter`, outputting a `Hash` corresponding to its
@@ -174,7 +175,9 @@ impl HashWriter {
 
 impl Default for HashWriter {
     fn default() -> HashWriter {
-        HashWriter { state: vec![] }
+        HashWriter {
+            state: HashEngine::default(),
+        }
     }
 }
 
@@ -188,7 +191,7 @@ impl Writer for HashWriter {
     }
 
     fn write_fixed_bytes<T: AsRef<[u8]>>(&mut self, bytes: T) -> Result<(), ser::Error> {
-        self.state.extend_from_slice(bytes.as_ref());
+        self.state.write_all(bytes.as_ref())?;
         Ok(())
     }
 }
